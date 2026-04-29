@@ -6,7 +6,7 @@ Config::Config()
     : gamma(1.4),
       xMin(-0.5),
       xMax(0.5),
-      tEnd(0.3),
+      tEnd(0.2),
       cfl(0.1),
       mu(0.01),
       mu4(0.001),

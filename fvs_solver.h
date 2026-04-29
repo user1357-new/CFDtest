@@ -12,6 +12,7 @@ private:
     
     ConsVar computeStegerWarmingFlux(const State& state) const;
     ConsVar computeRusanovFlux(const State& left, const State& right) const;
+    ConsVar computeRoeFlux(const State& left, const State& right) const;
     double computeWaveSpeed(const State& state) const;
     
     // 二阶精度需要的限制器
@@ -19,12 +20,16 @@ private:
     State minmod(const State& a, const State& b) const;
     State reconstructState(int i, const std::vector<State>& primitives, bool leftSide) const;
     
+    // Roe通量辅助函数
+    State roeAverage(const State& left, const State& right) const;
+    ConsVar physicalFlux(const State& state) const;
+    
     // 时间推进方法
     void eulerStep(std::vector<ConsVar>& U_new, const std::vector<ConsVar>& U_old, double dt);
     void rk3Step(std::vector<ConsVar>& U_final, const std::vector<ConsVar>& U_old, double dt);
 
 public:
-    FVSSolver(Grid& g, const Config& cfg, int spatialOrder = 2, int timeMethod = 2);
+    FVSSolver(Grid& g, const Config& cfg, int spatialOrder = 1, int timeMethod = 1);
     void evolve();
     double computeTimeStep();
 };

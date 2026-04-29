@@ -16,8 +16,8 @@ int main(int argc, char* argv[]) {
     grid.saveToFile(initialFile);
     std::cout << "save " << initialFile << std::endl;
 
-    // 选择求解器：1-一阶FVS(欧拉), 2-二阶FVS(欧拉), 3-一阶FVS(RK3), 4-二阶FVS(RK3), 5-Rusanov
-    int solverType = 3;  // 默认使用二阶FVS + RK3
+    // 选择求解器：1-一阶FVS(欧拉), 2-二阶FVS(欧拉), 3-一阶FVS(RK3), 4-二阶FVS(RK3), 5-Rusanov, 6-Roe+0阶重构
+    int solverType = 6;  // 默认使用Roe通量 + 0阶重构
     
     if (solverType == 1) {
         std::cout << "=== 一阶 FVS + Euler ===" << std::endl;
@@ -35,9 +35,13 @@ int main(int argc, char* argv[]) {
         std::cout << "=== 二阶 FVS + RK3 ===" << std::endl;
         FVSSolver solver(grid, config, 2, 2);
         solver.evolve();
-    } else {
+    } else if (solverType == 5) {
         std::cout << "=== Rusanov Solver ===" << std::endl;
         RusanovSolver solver(grid, config);
+        solver.evolve();
+    } else if (solverType == 6) {
+        std::cout << "=== Roe通量 + 0阶重构 + Euler ===" << std::endl;
+        FVSSolver solver(grid, config, 1, 1);  // order=1表示0阶重构，timeScheme=1表示Euler
         solver.evolve();
     }
 

@@ -14,6 +14,120 @@ double FVSSolver::computeWaveSpeed(const State& state) const {
     return fabs(state.u) + c;
 }
 
+ConsVar FVSSolver::physicalFlux(const State& state) const {
+    double E = state.p / ((config.gamma - 1.0) * state.rho) + 0.5 * state.u * state.u;
+    return ConsVar(
+        state.rho * state.u,
+        state.rho * state.u * state.u + state.p,
+        state.u * (state.rho * E + state.p)
+    );
+}
+
+State FVSSolver::roeAverage(const State& left, const State& right) const {
+    double sqrt_rho_L = sqrt(left.rho);
+    double sqrt_rho_R = sqrt(right.rho);
+    
+    State averaged;
+    averaged.rho = sqrt_rho_L * sqrt_rho_R;
+    averaged.u = (sqrt_rho_L * left.u + sqrt_rho_R * right.u) / (sqrt_rho_L + sqrt_rho_R);
+    averaged.p = (sqrt_rho_L * left.p + sqrt_rho_R * right.p) / (sqrt_rho_L + sqrt_rho_R);
+    
+    return averaged;
+}
+
+ConsVar FVSSolver::computeRoeFlux(const State& left, const State& right) const {
+    // 计算左右物理通量
+    ConsVar FL = physicalFlux(left);
+    ConsVar FR = physicalFlux(right);
+    
+    // Roe 平均
+    State avg = roeAverage(left, right);
+    
+    double u_hat = avg.u;
+    double gamma = config.gamma;
+    
+    // 计算平均声速(通过总焓更安全；若无总焓，假设 avg 中包含压力和密度)
+    // 如果你的 roeAverage 已算出 avg.p 和 avg.rho，也可以用下面两行：
+    double c_hat = sqrt(gamma * avg.p / avg.rho);
+    double H_hat = gamma * avg.p / ((gamma - 1.0) * avg.rho) + 0.5 * u_hat * u_hat;
+    
+    // 若 roeAverage 直接返回总焓 avg.H，则可改用：
+    // double H_hat = avg.H;
+    // double c_hat = sqrt((gamma - 1.0) * (H_hat - 0.5 * u_hat * u_hat));
+    
+    // 左右状态的原始变量差
+    double drho = right.rho - left.rho;
+    double du   = right.u   - left.u;
+    double dp   = right.p   - left.p;
+    
+    // 波强 (标准不乘 rho 的特征向量对应的公式)
+    double c2 = c_hat * c_hat;
+    double alpha1 = 0.5 * (dp - avg.rho * c_hat * du) / (c2 + 1e-12);
+    double alpha2 = drho - dp / (c2 + 1e-12);
+    double alpha3 = 0.5 * (dp + avg.rho * c_hat * du) / (c2 + 1e-12);
+    
+    // 特征值
+    double lambda1 = u_hat - c_hat;
+    double lambda2 = u_hat;
+    double lambda3 = u_hat + c_hat;
+    
+    // 熵修正开关
+    bool enableEntropyFix = false;   // 设为 false 可关闭熵修正
+    
+    double abs_l1, abs_l2, abs_l3;
+    
+    if (enableEntropyFix) {
+        // 统一的修正尺度 (与局部声速成比例)
+        double delta = 0.1 * c_hat;
+        
+        auto entropyFix = [&](double lambda) -> double {
+            double abs_lambda = std::abs(lambda);
+            if (abs_lambda <= delta) {
+                return 0.5 * (abs_lambda * abs_lambda / delta + delta);
+            } else {
+                return abs_lambda;
+            }
+        };
+        
+        abs_l1 = entropyFix(lambda1);
+        abs_l2 = entropyFix(lambda2);
+        abs_l3 = entropyFix(lambda3);
+    } else {
+        abs_l1 = std::abs(lambda1);
+        abs_l2 = std::abs(lambda2);
+        abs_l3 = std::abs(lambda3);
+    }
+    
+    // 标准右特征向量（不乘 rho）：
+    // R1 = (1, u-c, H-u*c)
+    // R2 = (1, u,   0.5*u*u)
+    // R3 = (1, u+c, H+u*c)
+    double R1_rho  = 1.0;
+    double R1_rhou = u_hat - c_hat;
+    double R1_rhoE = H_hat - u_hat * c_hat;
+    
+    double R2_rho  = 1.0;
+    double R2_rhou = u_hat;
+    double R2_rhoE = 0.5 * u_hat * u_hat;   // 修正原错误
+    
+    double R3_rho  = 1.0;
+    double R3_rhou = u_hat + c_hat;
+    double R3_rhoE = H_hat + u_hat * c_hat;
+    
+    ConsVar flux;
+    // 中心差分部分
+    flux.rho  = 0.5 * (FL.rho  + FR.rho);
+    flux.rhou = 0.5 * (FL.rhou + FR.rhou);
+    flux.rhoE = 0.5 * (FL.rhoE + FR.rhoE);
+    
+    // 迎风耗散部分
+    flux.rho  -= 0.5 * (alpha1 * abs_l1 * R1_rho  + alpha2 * abs_l2 * R2_rho  + alpha3 * abs_l3 * R3_rho);
+    flux.rhou -= 0.5 * (alpha1 * abs_l1 * R1_rhou + alpha2 * abs_l2 * R2_rhou + alpha3 * abs_l3 * R3_rhou);
+    flux.rhoE -= 0.5 * (alpha1 * abs_l1 * R1_rhoE + alpha2 * abs_l2 * R2_rhoE + alpha3 * abs_l3 * R3_rhoE);
+    
+    return flux;
+}
+
 ConsVar FVSSolver::computeStegerWarmingFlux(const State& state) const {
     double c = sqrt(config.gamma * state.p / state.rho);
     double rho = state.rho;
@@ -120,9 +234,9 @@ void FVSSolver::eulerStep(std::vector<ConsVar>& U_new, const std::vector<ConsVar
     grid.setConservativeVars(U_old);
     auto primitives = grid.getPrimitives();
     
-    std::vector<ConsVar> fluxes(nx);
+    std::vector<ConsVar> fluxes(nx + 1);
     
-    for (int i = 1; i < nx; ++i) {
+    for (int i = 1; i <= nx; ++i) {
         State leftState, rightState;
         
         if (order == 1) {
@@ -133,7 +247,7 @@ void FVSSolver::eulerStep(std::vector<ConsVar>& U_new, const std::vector<ConsVar
             rightState = reconstructState(i, primitives, true);
         }
         
-        fluxes[i] = computeRusanovFlux(leftState, rightState);
+        fluxes[i] = computeRoeFlux(leftState, rightState);
     }
     
     double dt_dx = dt / grid.getDx();

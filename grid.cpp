@@ -33,19 +33,25 @@ void Grid::initialize() {
     
     for (int i = 0; i < nx; ++i) {
         if (xCoords[i] <= 0.0) {
-            conservativeVars[i] = primToCons(State(1.0, 0.75, 1.0));
+            conservativeVars[i] = primToCons(State(5.0, sqrt(1.4), 29.0));
+            //conservativeVars[i] = primToCons(State(1.0, 0.0, 1.0));
         } else {
-            conservativeVars[i] = primToCons(State(0.125, 0.0, 0.1));
+            conservativeVars[i] = primToCons(State(1.0,5.0*sqrt(1.4),1.0));
+            //conservativeVars[i] = primToCons(State(0.125,0.0,0.1));
         }
     }
     applyBoundaryConditions();
 }
 
 void Grid::applyBoundaryConditions() {
-    conservativeVars[0] = primToCons(State(1.0, 0.75, 1.0));
-    conservativeVars[1] = primToCons(State(1.0, 0.75, 1.0));
-    conservativeVars[nx-2] = primToCons(State(0.125, 0.0, 0.1));
-    conservativeVars[nx-1] = primToCons(State(0.125, 0.0, 0.1));
+    conservativeVars[0] = primToCons(State(5.0, sqrt(1.4), 29.0));
+    conservativeVars[1] = primToCons(State(5.0, sqrt(1.4), 29.0));
+    //conservativeVars[0] = primToCons(State(1.0, 0.0, 1.0));
+    //conservativeVars[1] = primToCons(State(1.0, 0.0, 1.0));
+    conservativeVars[nx-2] = primToCons(State(1.0,5.0*sqrt(1.4),1.0));
+    conservativeVars[nx-1] = primToCons(State(1.0,5.0*sqrt(1.4),1.0));
+    //conservativeVars[nx-2] = primToCons(State(0.125,0.0,0.1));
+    //conservativeVars[nx-1] = primToCons(State(0.125,0.0,0.1));
 }
 
 int Grid::getNx() const { return nx; }
